@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>HyperHDR · Суточный свет</title>
+    <script src="theme.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header><a class="brand" href="./">◉ <span>HyperHDR<span class="muted"> / Day Cycle</span></span></a><div class="header-controls"><span class="badge">Локальный редактор</span><div class="theme-picker"><label class="theme-switch" title="Переключить светлую и тёмную тему"><input id="theme-toggle" type="checkbox" role="switch" aria-label="Тёмная тема"><span class="theme-track" aria-hidden="true"><span>☀</span><span>☾</span></span></label></div></div></header>
+    <main>
+        <nav class="section-tabs" aria-label="Разделы приложения">
+            <button id="settings-tab" aria-controls="settings-section" aria-current="page">Настройки</button>
+            <button id="launch-tab" aria-controls="launch-section">Как запускать</button>
+        </nav>
+        <div id="settings-section" aria-labelledby="settings-tab">
+        <div class="heading"><div><p class="eyebrow">СВЕТ В РИТМЕ ДНЯ</p><h1>Ваш день. Ваш свет.</h1><p class="muted">Настройте яркость и оттенки на 24 часа. Переходы между точками — автоматические.</p></div><div class="export-actions"><button id="export-exe" class="primary">↓ Скачать EXE</button><button id="export-script" hidden>↓ Скачать PowerShell</button></div></div>
+        <section class="panel">
+        <div class="connection-settings"><label for="hyperhdr-url">Адрес HyperHDR</label><input id="hyperhdr-url" type="url" value="http://localhost:8099/" placeholder="http://localhost:8099/" aria-describedby="hyperhdr-url-help" spellcheck="false" required><p id="hyperhdr-url-help" class="muted">Укажите адрес и порт нужного инстанса, например http://localhost:8090/. Путь /json-rpc добавляется автоматически. Адрес используется для проверки, проигрывания подсветки и скачиваемых EXE/PowerShell. Для уже запущенного EXE скачайте новую версию.</p><p id="hyperhdr-url-error" role="alert" hidden></p></div>
+        <div class="connection-check"><button id="check-hyperhdr" type="button">Проверить подключение</button><a id="open-hyperhdr" target="_blank" rel="noreferrer" hidden>Открыть HyperHDR ↗</a><p id="hyperhdr-status" role="status" aria-live="polite">Подключение ещё не проверялось.</p></div>
+        </section>
+        <section class="preview"><div><p class="eyebrow">ПРЕДПРОСМОТР</p><div class="clock" id="clock">12:00</div><p id="readout"></p></div><div class="lamp" id="lamp"><div></div></div><div class="playback"><button id="play" aria-label="Проиграть сутки на реальной подсветке" aria-pressed="false">▶ Проиграть сутки</button><label for="scrub">Время суток</label><input id="scrub" type="range" min="0" max="1439" value="720"><span class="muted">24 часа за 24 секунды · на реальной подсветке. Остановите другие контроллеры. Пауза освобождает управление.</span></div></section>
+        <section class="panel"><div class="section-heading"><div><h2>Кривая яркости</h2><p class="muted">Нажмите на график или перетащите линию времени · точки яркости можно двигать отдельно</p></div><button id="add-brightness">+ Точка</button></div><svg id="chart" viewBox="0 0 1000 250" role="group" aria-label="График яркости и выбор времени суток"></svg><div class="moment-editor"><label>Выбранное время<input id="moment-time" type="time" value="12:00"></label><label>Яркость, %<input id="moment-brightness" type="number" min="0" max="100" step="1"></label><label>Цвет<input id="moment-color" type="color"></label><button id="apply-moment">Применить к этому времени</button><p class="muted">Создаст точки яркости и цвета на выбранное время или обновит существующие.</p></div><div id="brightness-points" class="points"></div></section>
+        <section class="panel"><div class="section-heading"><div><h2>Палитра дня</h2><p class="muted">Плавное смешивание RGB · с переходом через полночь</p></div><button id="add-color">+ Цвет</button></div><div id="gradient"></div><div class="time-axis"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div><div id="color-points" class="points"></div></section>
+        <footer><span id="status" role="status">Изменения сохраняются в этом браузере</span><button id="reset">Сбросить</button></footer>
+        </div>
+        <section id="launch-section" aria-labelledby="launch-tab" hidden>
+            <div class="heading"><div><p class="eyebrow">ТРИ ПРОСТЫХ ШАГА</p><h1>Как запускать</h1><p class="muted">Скачайте программу с вашим расписанием и запустите её в Windows.</p></div></div>
+            <div class="panel launch-guide">
+                <ol>
+                    <li><h2>Скачайте EXE</h2><p>В разделе «Настройки» нажмите «Скачать EXE», выберите, показывать ли значок в системном трее, и подтвердите скачивание. Сохраните <code>HyperHDR-DayCycle.exe</code> в удобную папку.</p></li>
+                    <li><h2>Разблокируйте файл</h2><p>Нажмите правой кнопкой на скачанный EXE → «Свойства» → вкладка «Общие». Внизу окна отметьте «Разблокировать», затем нажмите «Применить» и «ОК», чтобы снять блокировку скачанного файла Windows.</p><p class="muted">Если пункта «Разблокировать» нет, переходите к следующему шагу.</p></li>
+                    <li><h2>Запустите программу</h2><p>Включите HyperHDR, остановите другие контроллеры подсветки и проигрывание в браузере. Откройте EXE двойным щелчком — он будет менять подсветку по вашему расписанию и времени компьютера. Браузер после этого можно закрыть.</p></li>
+                </ol>
+            </div>
+            <div class="panel launch-guide"><h2>Автозапуск после готовности HyperHDR</h2><p>Сохраните EXE в постоянную папку. Нажмите <kbd>Win</kbd> + <kbd>R</kbd>, введите <code>shell:startup</code> и создайте в открывшейся папке ярлык на EXE. Автозапуск самого HyperHDR включите отдельно.</p><p>EXE может стартовать раньше HyperHDR, но будет ждать корректного ответа его JSON API по адресу и порту из настроек. До этого команды цвета не отправляются. После ответа включится расписание по текущему времени; после ошибки связи программа снова будет ждать готовности HyperHDR.</p></div>
+            <details class="panel launch-guide help-details"><summary>Как принудительно остановить программу и убрать автозапуск</summary>
+                <h3>Остановить через Диспетчер задач</h3>
+                <p>Нажмите <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>Esc</kbd> и откройте «Подробности». Найдите <code>HyperHDR-DayCycle.exe</code>, нажмите на него правой кнопкой → «Завершить задачу» (или «Снять задачу») и подтвердите.</p>
+                <p>В новой версии EXE Windows автоматически завершает связанный PowerShell вместе с программой. Отдельный пункт «Завершить дерево процессов» не требуется. Последняя команда цвета истечёт примерно через 4 секунды.</p>
+                <h3>Отключить или удалить автозапуск</h3>
+                <p>В Диспетчере задач откройте «Автозагрузка приложений» (в Windows 10 — «Автозагрузка»), найдите программу и выберите «Отключить». Это отменяет запуск при следующем входе в Windows, но не останавливает уже работающий процесс.</p>
+                <p>Чтобы удалить запись, нажмите <kbd>Win</kbd> + <kbd>R</kbd>, введите <code>shell:startup</code> и удалите ярлык на <code>HyperHDR-DayCycle.exe</code>. Если программы нет в списке Диспетчера задач, удалите ярлык этим же способом. Сам EXE можно оставить.</p>
+                <p class="note"><a href="https://support.microsoft.com/en-us/windows/experience/startup-boot/configure-startup-applications-in-windows" target="_blank" rel="noreferrer">Справка Microsoft об управлении автозагрузкой</a>.</p>
+            </details>
+            <p class="note"><a href="https://support.microsoft.com/en-us/windows/security/information-about-the-attachment-manager-in-microsoft-windows" target="_blank" rel="noreferrer">Справка Microsoft о разблокировке скачанных файлов</a>.</p>
+        </section>
+    </main>
+    <dialog id="exe-dialog" aria-labelledby="exe-dialog-title" aria-describedby="exe-dialog-description">
+        <div class="section-heading"><h2 id="exe-dialog-title">Скачать EXE</h2><button id="close-exe-dialog" type="button" aria-label="Закрыть">×</button></div>
+        <p id="exe-dialog-description" class="muted">Текущее расписание будет встроено в файл.</p>
+        <div class="exe-options"><label><input id="show-tray" type="checkbox" checked autofocus> Показывать значок в системном трее</label><p class="muted">HyperHDR-DayCycle.exe будет управлять подсветкой по времени компьютера.</p></div>
+        <p id="exe-dialog-error" role="alert" hidden></p>
+        <div class="dialog-actions"><button id="cancel-exe-dialog" type="button">Отмена</button><button id="download-exe" class="primary" type="button">↓ Скачать</button></div>
+    </dialog>
+    <script src="launcher-template.js"></script>
+    <script src="live-control.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
