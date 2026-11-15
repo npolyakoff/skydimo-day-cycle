@@ -7,8 +7,8 @@ const assert = require('node:assert/strict');
 const root = path.join(__dirname, '..');
 const elements = new Map();
 const context = {
-    window: {}, Blob, TextEncoder, atob, URL,
-    document: { getElementById(id) { if (!elements.has(id)) elements.set(id, {setAttribute(){}}); return elements.get(id); } },
+    window: {addEventListener(){}}, Blob, TextEncoder, atob, URL,
+    document: { addEventListener(){}, getElementById(id) { if (!elements.has(id)) elements.set(id, {setAttribute(){}}); return elements.get(id); } },
     localStorage: { getItem() { return null; } }
 };
 vm.createContext(context);
@@ -42,22 +42,11 @@ async function check() {
     assert(script.includes('Minute = 812; Value = @(18,52,86)'));
     assert(!modified.equals(file));
     if (process.argv[2]) fs.writeFileSync(process.argv[2], modified);
-    const accelerated=Buffer.from(await run('createExecutable(true)').arrayBuffer());
-    const acceleratedLength=accelerated.readUInt32LE(accelerated.length-12);
-    const acceleratedScript=accelerated.subarray(-12-acceleratedLength,-12).toString('utf8');
-    assert.equal(acceleratedScript,'# HyperHDR-ShowTray: false\n'+run('exportScript(true)'));
-    assert(acceleratedScript.includes('$CycleSeconds = 24'));
-    assert(acceleratedScript.includes("$Url = 'http://localhost:8090/json-rpc'"));
-    assert(acceleratedScript.includes('$UpdateMs = 50'));
-    assert(acceleratedScript.includes('$minute = Get-VirtualMinute $timer.Elapsed.TotalSeconds'));
-    assert(acceleratedScript.includes('Start-Sleep -Milliseconds $UpdateMs'));
-    assert(acceleratedScript.includes('Minute = 812; Value = 37'));
-    assert(acceleratedScript.includes('Minute = 812; Value = @(18,52,86)'));
-    assert(!acceleratedScript.includes('$now = Get-Date'));
+    assert(script.includes('$now = Get-Date'));
     assert(script.includes('Start-Sleep -Seconds $UpdateSeconds'));
-    if(process.argv[2])fs.writeFileSync(process.argv[2]+'.test.ps1',acceleratedScript);
+    assert(!script.includes('$CycleSeconds'));
     context.window.hyperhdrLauncherBase64 = '';
     assert.throws(() => run('createExecutable()'));
-    console.log('Passed: PE template, both tray modes, realtime and accelerated exports, custom schedule, missing template.');
+    console.log('Passed: PE template, both tray modes, realtime export, custom schedule, missing template.');
 }
 check().catch(error => { console.error(error); process.exitCode = 1; });

@@ -1,7 +1,9 @@
 using System;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Windows.Forms;
@@ -31,6 +33,7 @@ internal static class HyperHDRLauncher
             }
             try
             {
+                BindProcessLifetime();
                 Application.EnableVisualStyles();
                 string script = ReadScript(Application.ExecutablePath);
                 using (EventWaitHandle signal = new EventWaitHandle(false, EventResetMode.AutoReset, @"Local\HyperHDR-DayCycle-Stop"))
@@ -45,6 +48,75 @@ internal static class HyperHDRLauncher
             finally { mutex.ReleaseMutex(); }
         }
     }
+
+    // Keep the sole, non-inherited handle until process exit. Closing the EXE
+    // closes this handle in Windows and terminates every remaining job member.
+    // Bind the parent BEFORE starting PowerShell, so child inheritance has no race.
+    private static IntPtr lifetimeJob;
+    internal static void BindProcessLifetime()
+    {
+        if (lifetimeJob != IntPtr.Zero) return;
+        IntPtr job = CreateJobObject(IntPtr.Zero, null);
+        if (job == IntPtr.Zero) throw new Win32Exception(Marshal.GetLastWin32Error());
+        try
+        {
+            JobExtendedLimitInformation limits = new JobExtendedLimitInformation();
+            limits.BasicLimitInformation.LimitFlags = 0x2000; // JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+            if (!SetInformationJobObject(job, 9, ref limits, (uint)Marshal.SizeOf(typeof(JobExtendedLimitInformation))))
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            if (!AssignProcessToJobObject(job, GetCurrentProcess()))
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            lifetimeJob = job;
+        }
+        catch { CloseHandle(job); throw; }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct JobBasicLimitInformation
+    {
+        public long PerProcessUserTimeLimit;
+        public long PerJobUserTimeLimit;
+        public uint LimitFlags;
+        public UIntPtr MinimumWorkingSetSize;
+        public UIntPtr MaximumWorkingSetSize;
+        public uint ActiveProcessLimit;
+        public UIntPtr Affinity;
+        public uint PriorityClass;
+        public uint SchedulingClass;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct JobIoCounters
+    {
+        public ulong ReadOperationCount;
+        public ulong WriteOperationCount;
+        public ulong OtherOperationCount;
+        public ulong ReadTransferCount;
+        public ulong WriteTransferCount;
+        public ulong OtherTransferCount;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct JobExtendedLimitInformation
+    {
+        public JobBasicLimitInformation BasicLimitInformation;
+        public JobIoCounters IoInfo;
+        public UIntPtr ProcessMemoryLimit;
+        public UIntPtr JobMemoryLimit;
+        public UIntPtr PeakProcessMemoryUsed;
+        public UIntPtr PeakJobMemoryUsed;
+    }
+
+    [DllImport("kernel32.dll", EntryPoint = "CreateJobObjectW", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr CreateJobObject(IntPtr attributes, string name);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool SetInformationJobObject(IntPtr job, int infoClass, ref JobExtendedLimitInformation info, uint length);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
+    [DllImport("kernel32.dll")]
+    private static extern IntPtr GetCurrentProcess();
+    [DllImport("kernel32.dll")]
+    private static extern bool CloseHandle(IntPtr handle);
 
     internal static bool ShouldShowTray(string script)
     {

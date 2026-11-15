@@ -36,7 +36,7 @@ function sample(points, minute, color = false) {
 function status(message) { $('status').textContent=message; }
 function save() {
     try { localStorage.setItem(storageKey,JSON.stringify(schedule)); status('Сохранено в этом браузере'); }
-    catch { status('Хранилище недоступно — сохраните настройки через экспорт JSON'); }
+    catch { status('Хранилище браузера недоступно. Настройки действуют до закрытия страницы; скачайте EXE или PowerShell для запуска этого расписания.'); }
 }
 function preview() {
     const minute=Number($('scrub').value), color=sample(schedule.colors,minute,true), brightness=sample(schedule.brightness,minute);
@@ -53,13 +53,13 @@ function preview() {
 function drawChart() {
     const x=m=>50+m/1440*930, y=v=>210-v*1.8;
     let svg='';
-    for(const v of [0,25,50,75,100]) svg+=`<line x1="50" x2="980" y1="${y(v)}" y2="${y(v)}" stroke="#303737"/><text x="5" y="${y(v)+4}" fill="#9ba8a4" font-size="11">${v}%</text>`;
-    for(const m of [0,360,720,1080,1440]) svg+=`<text x="${x(m)}" y="240" text-anchor="middle" fill="#9ba8a4" font-size="11">${time(m)}</text>`;
+    for(const v of [0,25,50,75,100]) svg+=`<line x1="50" x2="980" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="5" y="${y(v)+4}" fill="var(--muted)" font-size="11">${v}%</text>`;
+    for(const m of [0,360,720,1080,1440]) svg+=`<text x="${x(m)}" y="240" text-anchor="middle" fill="var(--muted)" font-size="11">${time(m)}</text>`;
     const line=[{minute:0,value:sample(schedule.brightness,0)},...sorted(schedule.brightness),{minute:1440,value:sample(schedule.brightness,0)}];
     const path=line.map((p,i)=>`${i?'L':'M'}${x(p.minute)},${y(p.value)}`).join(' ');
-    svg+=`<path d="${path} L980,210 L50,210 Z" fill="#c7f59a" opacity="0.07"/><path d="${path}" fill="none" stroke="#c7f59a" stroke-width="3"/>`;
-    schedule.brightness.forEach((p,i)=>{svg+=`<circle data-index="${i}" cx="${x(p.minute)}" cy="${y(p.value)}" r="6" fill="#c7f59a" stroke="#191d1d" stroke-width="3"><title>${time(p.minute)} · ${p.value}%</title></circle>`;});
-    svg+=`<g id="cursor"><line y1="25" y2="210" stroke="#eef4ef" stroke-dasharray="4 5" pointer-events="none"/><line y1="25" y2="210" stroke="transparent" stroke-width="18" class="timeline-hit"/><rect x="-25" y="2" width="50" height="22" rx="5" fill="#eff4ef" class="timeline-hit"/><text id="cursor-label" y="17" text-anchor="middle" fill="#101313" font-size="12" pointer-events="none"></text></g>`;
+    svg+=`<path d="${path} L980,210 L50,210 Z" fill="var(--accent)" opacity="0.07"/><path d="${path}" fill="none" stroke="var(--accent)" stroke-width="3"/>`;
+    schedule.brightness.forEach((p,i)=>{svg+=`<circle data-index="${i}" cx="${x(p.minute)}" cy="${y(p.value)}" r="6" fill="var(--accent)" stroke="var(--panel)" stroke-width="3"><title>${time(p.minute)} · ${p.value}%</title></circle>`;});
+    svg+=`<g id="cursor"><line y1="25" y2="210" stroke="var(--text)" stroke-dasharray="4 5" pointer-events="none"/><line y1="25" y2="210" stroke="transparent" stroke-width="18" class="timeline-hit"/><rect x="-25" y="2" width="50" height="22" rx="5" fill="var(--text)" class="timeline-hit"/><text id="cursor-label" y="17" text-anchor="middle" fill="var(--bg)" font-size="12" pointer-events="none"></text></g>`;
     $('chart').innerHTML=svg;
 }
 function renderPoints(kind) {
@@ -96,9 +96,13 @@ function add(kind, preferred=720, value) {
     schedule[kind].push({minute,value:value??(kind==='colors'?'#'+sample(schedule.colors,minute,true).map(c=>c.toString(16).padStart(2,'0')).join(''):Math.round(sample(schedule.brightness,minute)))});changed();
 }
 let drag=null, timelineDrag=false;
+let liveController=null, playbackStarting=false, playbackRun=0, playbackStop=Promise.resolve();
 function pausePlayback() {
+    playbackRun++;playbackStarting=false;
     if(animation!==null) {cancelAnimationFrame(animation);animation=null;}
+    if(liveController){const controller=liveController;liveController=null;playbackStop=controller.stop();connectionStatus('Проигрывание остановлено. Приоритет освобождается; при потере связи цвет истечёт через 1,5 секунды.');}
     $('play').textContent='▶ Проиграть сутки';
+    $('play').setAttribute('aria-pressed','false');
 }
 function selectMinute(minute) {
     pausePlayback();
@@ -152,20 +156,42 @@ $('apply-moment').onclick=()=>{
     changed();status(`Настройки на ${time(minute)} сохранены`);
 };
 let animation=null, previous=0;
-$('play').onclick=()=>{
-    if(animation!==null){cancelAnimationFrame(animation);animation=null;$('play').textContent='▶ Проиграть сутки';return;}
-    $('play').textContent='Ⅱ Пауза';previous=performance.now();let minute=Number($('scrub').value);
-    function frame(now){minute=(minute+(now-previous)*1440/24000)%1440;previous=now;$('scrub').value=Math.floor(minute);preview();animation=requestAnimationFrame(frame);}
-    animation=requestAnimationFrame(frame);
+$('play').onclick=async()=>{
+    if(animation!==null||playbackStarting){pausePlayback();return;}
+    let endpoint;try{endpoint=checkHyperHDRAddress();}catch(error){connectionStatus(error.message,'error');return;}
+    const run=++playbackRun;playbackStarting=true;
+    $('play').textContent='Подключение… · отменить';
+    try {
+        await playbackStop;if(run!==playbackRun)return;
+        const controller=new HyperHDRLiveController(endpoint,error=>{
+            if(liveController!==controller)return;
+            pausePlayback();connectionStatus(`Проигрывание остановлено: ${error.message}`,'error');
+        });
+        liveController=controller;await controller.connect();
+        if(run!==playbackRun)return;
+        playbackStarting=false;$('play').textContent='Ⅱ Пауза';$('play').setAttribute('aria-pressed','true');
+        connectionStatus(`Управляем HyperHDR · ${endpoint} · сутки за 24 секунды`,'success');
+        previous=performance.now();let minute=Number($('scrub').value);
+        function update(){
+            const color=sample(schedule.colors,minute,true),brightness=sample(schedule.brightness,minute);
+            controller.setColor(color.map(c=>Math.round(c*brightness/100)));
+        }
+        update();controller.flush();
+        function frame(now){
+            if(run!==playbackRun)return;
+            minute=(minute+(now-previous)*1440/24000)%1440;previous=now;
+            $('scrub').value=Math.floor(minute);preview();update();animation=requestAnimationFrame(frame);
+        }
+        animation=requestAnimationFrame(frame);
+    }catch(error){if(run===playbackRun){pausePlayback();connectionStatus(`Не удалось запустить подсветку: ${error.message}`,'error');}}
 };
+window.addEventListener('pagehide',pausePlayback);
+document.addEventListener('visibilitychange',()=>{if(document.hidden)pausePlayback();});
 $('add-color').onclick=()=>add('colors',Number($('scrub').value));$('add-brightness').onclick=()=>add('brightness',Number($('scrub').value));
 $('reset').onclick=()=>{if(confirm('Вернуть исходное расписание?')){schedule=clone(defaults);changed();}};
 function download(name,content,type) {
     const url=URL.createObjectURL(new Blob([content],{type}));const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
-$('export-json').onclick=()=>download('HyperHDR-Schedule.json',JSON.stringify(schedule,null,4),'application/json');
-$('import').onclick=()=>$('file').click();
-$('file').onchange=async event=>{const file=event.target.files[0];if(!file)return;try {if(file.size>100000)throw Error('Файл слишком большой.');schedule=validate(JSON.parse(await file.text()));changed();status('Расписание импортировано');}catch(error){status(`Ошибка импорта: ${error.message}`);}event.target.value='';};
 function getHyperHDREndpoint(value) {
     let url;
     try { url=new URL(value.trim()); } catch { throw Error('Укажите полный адрес HyperHDR, например http://localhost:8099/'); }
@@ -186,23 +212,96 @@ function checkHyperHDRAddress() {
         throw error;
     }
 }
+let hyperhdrCheck=null;
+function connectionStatus(message,state='idle') {
+    $('hyperhdr-status').textContent=message;
+    $('hyperhdr-status').dataset.state=state;
+}
+function resetHyperHDRCheck() {
+    pausePlayback();
+    if(hyperhdrCheck)hyperhdrCheck.abort();
+    hyperhdrCheck=null;
+    $('check-hyperhdr').disabled=false;
+    $('check-hyperhdr').textContent='Проверить подключение';
+    $('open-hyperhdr').hidden=true;
+    connectionStatus('Адрес изменён. Проверьте подключение заново.');
+}
+$('hyperhdr-url').oninput=resetHyperHDRCheck;
+function probeHyperHDR(endpoint,signal) {
+    return new Promise((resolve,reject)=>{
+        if(signal.aborted){reject(Error('Проверка отменена.'));return;}
+        const url=new URL(endpoint);
+        url.protocol=url.protocol==='https:'?'wss:':'ws:';
+        url.pathname='/';
+        let socket,settled=false;
+        const finish=(error,info)=>{
+            if(settled)return;
+            settled=true;signal.removeEventListener('abort',abort);
+            if(socket){socket.onopen=socket.onmessage=socket.onerror=socket.onclose=null;try{socket.close();}catch{}}
+            if(error)reject(error);else resolve(info);
+        };
+        const abort=()=>finish(Error('Проверка отменена.'));
+        try {socket=new WebSocket(url.href);}
+        catch {reject(Error('Браузер не разрешил WebSocket-соединение. Проверьте разрешение доступа к локальной сети и протокол адреса.'));return;}
+        signal.addEventListener('abort',abort,{once:true});
+        socket.onopen=()=>{try{socket.send(JSON.stringify({command:'serverinfo',tan:1}));}catch{finish(Error('Не удалось отправить запрос HyperHDR.'));}};
+        socket.onmessage=event=>{
+            let data;
+            try{data=JSON.parse(event.data);}catch{finish(Error('Получен ответ, который не является JSON HyperHDR.'));return;}
+            // Ignore unsolicited events; wait for the reply to this request.
+            if(data?.command!=='serverinfo'&&data?.tan!==1)return;
+            if(data.success===false){
+                const error=typeof data.error==='string'?data.error:JSON.stringify(data.error??'');
+                finish(Error(/author|token|auth|access|permission/i.test(error)?'HyperHDR отвечает, но требует авторизацию. Проверьте настройки доступа JSON API.':`JSON API отклонил проверку: ${error.slice(0,200)||'неизвестная ошибка'}`));return;
+            }
+            if(data.success!==true||data.command!=='serverinfo'||!data.info||typeof data.info!=='object'||Array.isArray(data.info)){finish(Error('Корректный ответ serverinfo от HyperHDR не получен.'));return;}
+            finish(null,data.info);
+        };
+        socket.onerror=()=>finish(Error('WebSocket недоступен. Проверьте запуск HyperHDR, адрес, порт и разрешение браузера на доступ к локальной сети.'));
+        socket.onclose=()=>finish(Error('HyperHDR закрыл соединение до ответа. Проверьте настройки доступа JSON API.'));
+    });
+}
+$('check-hyperhdr').onclick=async()=>{
+    let endpoint;
+    try{endpoint=checkHyperHDRAddress();}catch(error){connectionStatus(error.message,'error');return;}
+    if(hyperhdrCheck)hyperhdrCheck.abort();
+    const controller=new AbortController();hyperhdrCheck=controller;
+    let timedOut=false;
+    const timeout=setTimeout(()=>{timedOut=true;controller.abort();},5000);
+    const started=performance.now();
+    $('check-hyperhdr').disabled=true;$('check-hyperhdr').textContent='Проверка…';
+    $('open-hyperhdr').href=new URL(endpoint).origin+'/';$('open-hyperhdr').hidden=false;
+    connectionStatus(`Проверяем ${endpoint}…`,'pending');
+    try {
+        await probeHyperHDR(endpoint,controller.signal);
+        if(hyperhdrCheck!==controller)return;
+        connectionStatus(`HyperHDR отвечает · ${Math.round(performance.now()-started)} мс · ${endpoint}`,'success');
+    }catch(error){
+        if(hyperhdrCheck!==controller)return;
+        connectionStatus(timedOut?'За 5 секунд ответ не получен. Проверьте запуск HyperHDR, адрес, порт и настройки доступа.':error instanceof TypeError?'Не удалось проверить WebSocket-соединение. Проверьте HyperHDR и разрешение браузера на доступ к локальной сети.':error.message,'error');
+    }finally{
+        clearTimeout(timeout);
+        if(hyperhdrCheck===controller){hyperhdrCheck=null;$('check-hyperhdr').disabled=false;$('check-hyperhdr').textContent='Проверить подключение';}
+    }
+};
 $('hyperhdr-url').onchange=()=>{
+    resetHyperHDRCheck();
     try {
         const endpoint=checkHyperHDRAddress();
         try {localStorage.setItem('hyperhdr-url',endpoint.replace(/json-rpc$/,''));status('Адрес HyperHDR сохранён для следующих скачиваний');}
         catch {status('Адрес применён; хранилище браузера недоступно');}
     } catch(error) {status(error.message);}
 };
-function exportScript(testMode=false) {
+function exportScript() {
     const endpoint=checkHyperHDRAddress().replace(/'/g,"''");
     const colorPoints=sorted(schedule.colors).map(p=>`    @{ Minute = ${p.minute}; Value = @(${rgb(p.value).join(',')}) }`).join('\r\n');
     const brightnessPoints=sorted(schedule.brightness).map(p=>`    @{ Minute = ${p.minute}; Value = ${p.value} }`).join('\r\n');
-    return `# HyperHDR - exported ${testMode?'24-second test':'daily schedule'}. Windows PowerShell 5.1+
+    return `# HyperHDR - exported daily schedule. Windows PowerShell 5.1+
 # Run one controller at a time. Press Ctrl+C to stop.
 $Url = '${endpoint}'
 $Priority = 50
 $UpdateSeconds = 1
-${testMode?'$CycleSeconds = 24\n$UpdateMs = 50\n':''}
+$RetrySeconds = 2
 $ColorPoints = @(
 ${colorPoints}
 )
@@ -242,54 +341,76 @@ function Get-ScheduleValue($Points, [double]$Minute, [switch]$Smooth) {
 }
 
 function Send-Request($Body) {
-    $response = Invoke-RestMethod -Uri $Url -Method Post -ContentType "application/json" -Body ($Body | ConvertTo-Json -Compress) -TimeoutSec 5
-    if ($response.success -eq $false) {
+    $response = Invoke-RestMethod -Uri $Url -Method Post -ContentType "application/json" -Body ($Body | ConvertTo-Json -Compress) -TimeoutSec 5 -ErrorAction Stop
+    if ($response.success -ne $true -or $response.command -ne $Body.command) {
         throw ("HyperHDR rejected command: " + ($response | ConvertTo-Json -Compress))
     }
 }
 
-${testMode?`function Get-VirtualMinute([double]$ElapsedSeconds) {
-    return (($ElapsedSeconds % $CycleSeconds) / $CycleSeconds) * 1440
+function Wait-HyperHDR {
+    Write-Host "Waiting for HyperHDR at $Url"
+    while ($true) {
+        try {
+            $body = @{ command = "serverinfo" } | ConvertTo-Json -Compress
+            $response = Invoke-RestMethod -Uri $Url -Method Post -ContentType "application/json" -Body $body -TimeoutSec 3 -ErrorAction Stop
+            if ($response.success -eq $true -and $response.command -eq "serverinfo" -and $null -ne $response.info -and $response.info -is [System.Management.Automation.PSCustomObject]) {
+                return
+            }
+        }
+        catch {
+            Write-Host "HyperHDR is not ready: $_"
+        }
+        Start-Sleep -Seconds $RetrySeconds
+    }
 }
 
-`:''}Write-Host "HyperHDR ${testMode?'24-second test':'schedule'} started. Press Ctrl+C to stop."
-${testMode?'$timer = [Diagnostics.Stopwatch]::StartNew()\n':''}
+Write-Host "HyperHDR schedule started. Press Ctrl+C to stop."
+$ready = $false
+$ownsPriority = $false
 try {
     while ($true) {
         try {
-${testMode?'            $minute = Get-VirtualMinute $timer.Elapsed.TotalSeconds':'            $now = Get-Date\n            $minute = $now.Hour * 60 + $now.Minute + $now.Second / 60.0'}
+            if (-not $ready) {
+                Wait-HyperHDR
+                $ready = $true
+            }
+            $now = Get-Date
+            $minute = $now.Hour * 60 + $now.Minute + $now.Second / 60.0
             $color = Get-ScheduleValue $ColorPoints $minute -Smooth
             $brightness = Get-ScheduleValue $BrightnessPoints $minute
             $finalColor = @(foreach ($channel in $color) { [int][Math]::Round($channel * $brightness / 100) })
             # Renew the finite lease even when the color is unchanged.
             Send-Request @{ command = "color"; color = $finalColor; priority = $Priority; duration = 4000 }
+            $ownsPriority = $true
         }
         catch {
+            $ready = $false
             Write-Host "Error: $_" -ForegroundColor Red
         }
-        Start-Sleep ${testMode?'-Milliseconds $UpdateMs':'-Seconds $UpdateSeconds'}
+        Start-Sleep -Seconds $UpdateSeconds
     }
 }
 finally {
-${testMode?'    $timer.Stop()\n':''}
-    try { Send-Request @{ command = "clear"; priority = $Priority } }
-    catch { Write-Warning "Could not clear priority: $_" }
+    if ($ownsPriority) {
+        try { Send-Request @{ command = "clear"; priority = $Priority } }
+        catch { Write-Warning "Could not clear priority: $_" }
+    }
 }
 `.replace(/\r?\n/g,'\r\n');
 }
 $('export-script').onclick=()=>{
     try {download('HyperHDR-CustomCycle.ps1','\ufeff'+exportScript(),'text/plain;charset=utf-8');}
-    catch(error) {status(error.message);$('export-exe').onclick();$('hyperhdr-url').focus();}
+    catch(error) {status(error.message);$('hyperhdr-url').focus();}
 };
 try { $('show-tray').checked=localStorage.getItem('hyperhdr-show-tray')!=='false'; } catch { $('show-tray').checked=true; }
 $('show-tray').onchange=()=>{
     try { localStorage.setItem('hyperhdr-show-tray',String($('show-tray').checked)); }
     catch { status('Настройка трея применена; хранилище браузера недоступно'); }
 };
-function createExecutable(testMode=false) {
+function createExecutable() {
     if(!window.hyperhdrLauncherBase64) throw Error('Шаблон EXE недоступен. Проверьте файл launcher-template.js рядом с приложением.');
     const template=Uint8Array.from(atob(window.hyperhdrLauncherBase64),c=>c.charCodeAt(0));
-    const script=new TextEncoder().encode(`# HyperHDR-ShowTray: ${$('show-tray').checked?'true':'false'}\n`+exportScript(testMode));
+    const script=new TextEncoder().encode(`# HyperHDR-ShowTray: ${$('show-tray').checked?'true':'false'}\n`+exportScript());
     const trailer=new Uint8Array(12);
     new DataView(trailer.buffer).setUint32(0,script.length,true);
     trailer.set(new TextEncoder().encode('HHDRPS01'),4);
@@ -301,8 +422,7 @@ $('export-exe').onclick=()=>{
 };
 $('close-exe-dialog').onclick=$('cancel-exe-dialog').onclick=()=>$('exe-dialog').close();
 $('download-exe').onclick=()=>{
-    const testMode=$('exe-mode').value==='preview';
-    try {download(testMode?'HyperHDR-DayCycle-Test.exe':'HyperHDR-DayCycle.exe',createExecutable(testMode),'application/vnd.microsoft.portable-executable');$('exe-dialog').close();status(testMode?'Тестовый EXE скачан: сутки за 24 секунды на реальной подсветке. Остановите обычный контроллер перед запуском.':'EXE с текущим расписанием скачан. Инструкция по автозапуску — в разделе «Как запускать».');}
+    try {download('HyperHDR-DayCycle.exe',createExecutable(),'application/vnd.microsoft.portable-executable');$('exe-dialog').close();status('EXE с текущим расписанием скачан. Инструкция по автозапуску — в разделе «Как запускать».');}
     catch(error){$('exe-dialog-error').textContent=error.message;$('exe-dialog-error').hidden=false;}
 };
 function showSection(section) {
@@ -318,4 +438,5 @@ function showSection(section) {
 }
 $('settings-tab').onclick=()=>showSection('settings');
 $('launch-tab').onclick=()=>showSection('launch');
+document.addEventListener('DOMContentLoaded',()=>$('check-hyperhdr').onclick(),{once:true});
 render();
