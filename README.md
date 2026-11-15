@@ -20,10 +20,15 @@
 
 ## Структура проекта
 
+Редактор расписания находится в [app/index.html](app/index.html). Откройте его в браузере: он позволяет настроить цвет и яркость, скачать обычный или ускоренный тестовый EXE и выбрать режим трея. Инструкции по запуску и автозагрузке доступны в разделе «Как запускать» и в [описании приложения](app/README.md). Старый `Start-HyperHDR.vbs` не требуется.
+
 ```text
 scripts/HyperHDR-DayCycle.ps1       # Основной суточный цикл
 tests/HyperHDR-DayCycle-Test.ps1   # Ускоренный просмотр: сутки за 24 секунды
-tests/HyperHDR-Test.ps1            # Проверка подключения случайными цветами
+app/                              # HTML-редактор и шаблон скачиваемого EXE
+scripts/HyperHDR-DayCycle-Launcher.cs # Исходник EXE-оболочки
+scripts/HyperHDR-BuildLauncher.ps1 # Пересборка шаблона EXE для приложения
+tests/HyperHDR-Exe-Test.js         # Проверка экспорта EXE без обращения к подсветке
 examples/HyperHDR-SetRed.ps1        # Однократное включение красного на 5 секунд
 AGENTS.md                         # Руководство для участников проекта
 ```
@@ -41,14 +46,13 @@ AGENTS.md                         # Руководство для участни
 powershell.exe -NoProfile -File .\scripts\HyperHDR-DayCycle.ps1
 ```
 
-Для ускоренного просмотра или проверки подключения:
+Для ускоренного просмотра:
 
 ```powershell
 powershell.exe -NoProfile -File .\tests\HyperHDR-DayCycle-Test.ps1
-powershell.exe -NoProfile -File .\tests\HyperHDR-Test.ps1
 ```
 
-Запускай один контроллер за раз: скрипты используют одинаковый приоритет `50`. Для остановки нажми `Ctrl+C`. Автозапуск в проекте не настроен.
+Запускай один контроллер за раз: скрипты используют одинаковый приоритет `50`. Для остановки нажми `Ctrl+C`. Для автозапуска скачанного EXE создай ярлык в папке `shell:startup`, как описано в приложении.
 
 ## Настройка
 
